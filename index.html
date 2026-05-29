@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>名刺管理</title>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<style>
+  :root{
+    --bg:#ffffff;
+    --fg:#111111;
+    --muted:#888888;
+    --line:#e6e6e6;
+    --line-strong:#cccccc;
+    --hover:#f7f7f7;
+    --chip:#f2f2f2;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;
+    font-size:15px;
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:960px;margin:0 auto;padding:40px 24px 80px;}
+
+  header.app{
+    display:flex;align-items:baseline;justify-content:space-between;
+    border-bottom:1px solid var(--fg);padding-bottom:16px;margin-bottom:28px;
+  }
+  header.app h1{font-size:22px;font-weight:600;letter-spacing:.04em;margin:0;}
+  header.app .count{font-size:13px;color:var(--muted);}
+
+  /* Controls */
+  .controls{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:18px;}
+  .search{flex:1;min-width:220px;position:relative;}
+  .search input{
+    width:100%;padding:11px 14px;border:1px solid var(--line-strong);
+    background:var(--bg);color:var(--fg);font-size:14px;border-radius:0;outline:none;
+  }
+  .search input:focus{border-color:var(--fg);}
+  .btn{
+    border:1px solid var(--fg);background:var(--fg);color:#fff;
+    padding:11px 18px;font-size:14px;cursor:pointer;border-radius:0;
+    transition:opacity .15s;white-space:nowrap;
+  }
+  .btn:hover{opacity:.78;}
+  .btn:disabled{opacity:.4;cursor:default;}
+  .btn.ghost{background:var(--bg);color:var(--fg);}
+  .btn.ghost:hover{background:var(--hover);opacity:1;}
+  .btn.sm{padding:8px 14px;font-size:13px;}
+
+  /* Tag filter bar */
+  .tagbar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:24px;}
+  .tagbar .tag{
+    font-size:12.5px;padding:5px 12px;border:1px solid var(--line-strong);
+    background:var(--bg);color:var(--fg);cursor:pointer;border-radius:0;
+    transition:all .12s;
+  }
+  .tagbar .tag:hover{border-color:var(--fg);}
+  .tagbar .tag.active{background:var(--fg);color:#fff;border-color:var(--fg);}
+
+  /* Card list */
+  .list{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);}
+  .card{
+    background:var(--bg);padding:18px 20px;cursor:pointer;position:relative;
+    transition:background .12s;display:flex;gap:14px;
+  }
+  .card:hover{background:var(--hover);}
+  .card .thumb{width:56px;height:36px;flex-shrink:0;object-fit:cover;border:1px solid var(--line);background:var(--hover);}
+  .card .body{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1;}
+  .card .nm{font-size:16px;font-weight:600;}
+  .card .co{font-size:13px;color:var(--fg);}
+  .card .ti{font-size:12.5px;color:var(--muted);}
+  .card .meta{font-size:12.5px;color:var(--muted);margin-top:6px;word-break:break-all;}
+  .card .chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:10px;}
+  .card .chip{font-size:11px;background:var(--chip);padding:2px 9px;color:#333;}
+
+  .empty{text-align:center;color:var(--muted);padding:80px 0;font-size:14px;border:1px dashed var(--line-strong);}
+
+  /* Modal */
+  .overlay{
+    position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;
+    align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto;z-index:50;
+  }
+  .overlay.open{display:flex;}
+  .modal{
+    background:var(--bg);width:100%;max-width:520px;border:1px solid var(--fg);
+    padding:28px 28px 24px;
+  }
+  .modal h2{margin:0 0 20px;font-size:18px;font-weight:600;}
+  .field{margin-bottom:14px;}
+  .field label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;letter-spacing:.03em;}
+  .field input,.field textarea{
+    width:100%;padding:9px 12px;border:1px solid var(--line-strong);
+    background:var(--bg);color:var(--fg);font-size:14px;font-family:inherit;outline:none;border-radius:0;
+  }
+  .field input:focus,.field textarea:focus{border-color:var(--fg);}
+  .field textarea{resize:vertical;min-height:60px;}
+  .field .hint{font-size:11px;color:var(--muted);margin-top:4px;}
+  .modal-actions{display:flex;justify-content:space-between;align-items:center;margin-top:22px;gap:10px;}
+  .modal-actions .right{display:flex;gap:10px;}
+  .link-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:6px 0;text-decoration:underline;}
+  .link-del:hover{color:#c00;}
+
+  /* Photo / OCR block */
+  .photobox{border:1px solid var(--line-strong);padding:16px;margin-bottom:18px;}
+  .photobox .ph-head{font-size:12px;color:var(--muted);margin-bottom:10px;letter-spacing:.03em;}
+  .photobox .ph-row{display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;}
+  .photobox .preview{width:140px;height:88px;object-fit:cover;border:1px solid var(--line);background:var(--hover);display:none;}
+  .photobox .ph-controls{display:flex;flex-direction:column;gap:8px;flex:1;min-width:160px;}
+  .ocr-status{font-size:12px;color:var(--muted);min-height:18px;}
+  .ocr-result{display:none;margin-top:12px;}
+  .ocr-result textarea{width:100%;min-height:80px;font-size:12.5px;border:1px solid var(--line);padding:8px 10px;font-family:inherit;color:#444;background:var(--hover);resize:vertical;}
+  .ocr-result .ocr-actions{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;}
+  .filebtn{position:relative;overflow:hidden;display:inline-block;}
+  .filebtn input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;}
+
+  /* Detail view rows */
+  .detail-photo{width:100%;max-height:200px;object-fit:contain;border:1px solid var(--line);margin-bottom:16px;background:var(--hover);}
+  .detail-row{display:flex;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px;}
+  .detail-row .k{width:90px;color:var(--muted);font-size:12.5px;flex-shrink:0;}
+  .detail-row .v{flex:1;word-break:break-all;}
+  .detail-row a{color:var(--fg);}
+  .detail-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px;}
+  .detail-chips .chip{font-size:12px;background:var(--chip);padding:3px 11px;}
+
+  @media (max-width:560px){
+    .wrap{padding:28px 16px 60px;}
+    .list{grid-template-columns:1fr;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="app">
+    <h1>名刺管理</h1>
+    <span class="count" id="count"></span>
+  </header>
+
+  <div class="controls">
+    <div class="search">
+      <input id="search" type="text" placeholder="名前・会社・役職・メール・電話で検索">
+    </div>
+    <button class="btn" id="addBtn">+ 新規登録</button>
+  </div>
+
+  <div class="tagbar" id="tagbar"></div>
+
+  <div id="listArea"></div>
+</div>
+
+<!-- Edit / Add modal -->
+<div class="overlay" id="editOverlay">
+  <div class="modal">
+    <h2 id="editTitle">新規登録</h2>
+
+    <div class="photobox">
+      <div class="ph-head">名刺写真からの読み取り</div>
+      <div class="ph-row">
+        <img class="preview" id="preview" alt="">
+        <div class="ph-controls">
+          <span class="btn ghost sm filebtn">写真を選択 / 撮影
+            <input id="photoInput" type="file" accept="image/*" capture="environment">
+          </span>
+          <button class="btn sm" id="ocrBtn" disabled>自動で読み取る</button>
+          <button class="btn ghost sm" id="removePhoto" style="display:none">写真を削除</button>
+          <div class="ocr-status" id="ocrStatus"></div>
+        </div>
+      </div>
+      <div class="ocr-result" id="ocrResult">
+        <div class="hint">読み取り結果（手動で各欄に貼り付けて修正できます）</div>
+        <textarea id="ocrText" readonly></textarea>
+        <div class="ocr-actions">
+          <button class="btn ghost sm" id="ocrToMemo">メモに追加</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="field"><label>氏名 *</label><input id="f_name" type="text" autocomplete="off"></div>
+    <div class="field"><label>会社名</label><input id="f_company" type="text" autocomplete="off"></div>
+    <div class="field"><label>部署・役職</label><input id="f_title" type="text" autocomplete="off"></div>
+    <div class="field"><label>メール</label><input id="f_email" type="text" autocomplete="off"></div>
+    <div class="field"><label>電話</label><input id="f_phone" type="text" autocomplete="off"></div>
+    <div class="field">
+      <label>タグ</label><input id="f_tags" type="text" autocomplete="off" placeholder="例: 取引先, 営業, 重要">
+      <div class="hint">カンマ区切りで複数入力できます</div>
+    </div>
+    <div class="field"><label>メモ</label><textarea id="f_memo"></textarea></div>
+
+    <div class="modal-actions">
+      <button class="link-del" id="deleteBtn" style="visibility:hidden">削除</button>
+      <div class="right">
+        <button class="btn ghost" id="cancelEdit">キャンセル</button>
+        <button class="btn" id="saveBtn">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Detail modal -->
+<div class="overlay" id="detailOverlay">
+  <div class="modal">
+    <h2 id="d_name"></h2>
+    <div id="d_body"></div>
+    <div class="modal-actions">
+      <span></span>
+      <div class="right">
+        <button class="btn ghost" id="closeDetail">閉じる</button>
+        <button class="btn" id="editFromDetail">編集</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const STORE_KEY = "meishi_cards_v1";
+let cards = [];
+let editingId = null;
+let activeTag = null;
+let currentPhoto = null;   // dataURL of the card photo being edited
+let ocrWorker = null;
+
+function load(){
+  try{ cards = JSON.parse(localStorage.getItem(STORE_KEY)) || []; }
+  catch(e){ cards = []; }
+}
+function save(){
+  try{ localStorage.setItem(STORE_KEY, JSON.stringify(cards)); }
+  catch(e){ alert("保存に失敗しました。写真の容量が大きすぎる可能性があります。"); }
+}
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+function esc(s){ return (s||"").replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+const $ = id => document.getElementById(id);
+
+/* ---------- rendering ---------- */
+function allTags(){
+  const set = new Set();
+  cards.forEach(c => (c.tags||[]).forEach(t => set.add(t)));
+  return [...set].sort((a,b)=>a.localeCompare(b,'ja'));
+}
+
+function renderTagbar(){
+  const bar = $("tagbar");
+  const tags = allTags();
+  bar.innerHTML = "";
+  if(tags.length === 0) return;
+  const all = document.createElement("span");
+  all.className = "tag" + (activeTag===null?" active":"");
+  all.textContent = "すべて";
+  all.onclick = ()=>{ activeTag = null; render(); };
+  bar.appendChild(all);
+  tags.forEach(t=>{
+    const el = document.createElement("span");
+    el.className = "tag" + (activeTag===t?" active":"");
+    el.textContent = t;
+    el.onclick = ()=>{ activeTag = (activeTag===t?null:t); render(); };
+    bar.appendChild(el);
+  });
+}
+
+function filtered(){
+  const q = $("search").value.trim().toLowerCase();
+  return cards.filter(c=>{
+    if(activeTag && !(c.tags||[]).includes(activeTag)) return false;
+    if(!q) return true;
+    const hay = [c.name,c.company,c.title,c.email,c.phone,(c.tags||[]).join(" "),c.memo].join(" ").toLowerCase();
+    return hay.includes(q);
+  });
+}
+
+function render(){
+  renderTagbar();
+  const area = $("listArea");
+  const items = filtered().sort((a,b)=>(a.name||"").localeCompare(b.name||"",'ja'));
+  $("count").textContent = cards.length + " 件";
+
+  if(cards.length === 0){
+    area.innerHTML = '<div class="empty">名刺がまだ登録されていません。<br>「+ 新規登録」から追加してください。</div>';
+    return;
+  }
+  if(items.length === 0){
+    area.innerHTML = '<div class="empty">該当する名刺がありません。</div>';
+    return;
+  }
+  const list = document.createElement("div");
+  list.className = "list";
+  items.forEach(c=>{
+    const card = document.createElement("div");
+    card.className = "card";
+    card.onclick = ()=>openDetail(c.id);
+    let meta = "";
+    if(c.email) meta += esc(c.email);
+    if(c.phone) meta += (meta?" / ":"") + esc(c.phone);
+    const chips = (c.tags||[]).map(t=>`<span class="chip">${esc(t)}</span>`).join("");
+    const thumb = c.photo ? `<img class="thumb" src="${c.photo}" alt="">` : "";
+    card.innerHTML = thumb +
+      `<div class="body">`+
+      `<div class="nm">${esc(c.name)||"(無名)"}</div>`+
+      (c.company?`<div class="co">${esc(c.company)}</div>`:"")+
+      (c.title?`<div class="ti">${esc(c.title)}</div>`:"")+
+      (meta?`<div class="meta">${meta}</div>`:"")+
+      (chips?`<div class="chips">${chips}</div>`:"")+
+      `</div>`;
+    list.appendChild(card);
+  });
+  area.innerHTML = "";
+  area.appendChild(list);
+}
+
+/* ---------- detail ---------- */
+function openDetail(id){
+  const c = cards.find(x=>x.id===id);
+  if(!c) return;
+  editingId = id;
+  $("d_name").textContent = c.name || "(無名)";
+  const rows = [];
+  if(c.company) rows.push(["会社", esc(c.company)]);
+  if(c.title) rows.push(["役職", esc(c.title)]);
+  if(c.email) rows.push(["メール", `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>`]);
+  if(c.phone) rows.push(["電話", `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>`]);
+  if(c.memo) rows.push(["メモ", esc(c.memo).replace(/\n/g,"<br>")]);
+  let html = c.photo ? `<img class="detail-photo" src="${c.photo}" alt="名刺写真">` : "";
+  html += rows.map(r=>`<div class="detail-row"><div class="k">${r[0]}</div><div class="v">${r[1]}</div></div>`).join("");
+  if((c.tags||[]).length){
+    html += `<div class="detail-chips">${c.tags.map(t=>`<span class="chip">${esc(t)}</span>`).join("")}</div>`;
+  }
+  if(!html) html = '<div style="color:var(--muted);font-size:13px;">追加情報はありません。</div>';
+  $("d_body").innerHTML = html;
+  $("detailOverlay").classList.add("open");
+}
+
+/* ---------- edit / add ---------- */
+function setPreview(dataUrl){
+  currentPhoto = dataUrl || null;
+  const pv = $("preview");
+  if(dataUrl){ pv.src = dataUrl; pv.style.display = "block"; $("removePhoto").style.display = ""; $("ocrBtn").disabled = false; }
+  else{ pv.removeAttribute("src"); pv.style.display = "none"; $("removePhoto").style.display = "none"; $("ocrBtn").disabled = true; }
+}
+
+function resetOcrUI(){
+  $("ocrStatus").textContent = "";
+  $("ocrResult").style.display = "none";
+  $("ocrText").value = "";
+}
+
+function openEdit(id){
+  editingId = id;
+  const c = id ? cards.find(x=>x.id===id) : null;
+  $("editTitle").textContent = c ? "編集" : "新規登録";
+  $("f_name").value = c?c.name||"":"";
+  $("f_company").value = c?c.company||"":"";
+  $("f_title").value = c?c.title||"":"";
+  $("f_email").value = c?c.email||"":"";
+  $("f_phone").value = c?c.phone||"":"";
+  $("f_tags").value = c?(c.tags||[]).join(", "):"";
+  $("f_memo").value = c?c.memo||"":"";
+  $("deleteBtn").style.visibility = c ? "visible" : "hidden";
+  $("photoInput").value = "";
+  resetOcrUI();
+  setPreview(c ? (c.photo||null) : null);
+  $("editOverlay").classList.add("open");
+  $("f_name").focus();
+}
+
+function closeEdit(){ $("editOverlay").classList.remove("open"); }
+function closeDetail(){ $("detailOverlay").classList.remove("open"); }
+
+function saveCard(){
+  const name = $("f_name").value.trim();
+  if(!name){ alert("氏名を入力してください。"); return; }
+  const tags = $("f_tags").value.split(",").map(t=>t.trim()).filter(Boolean);
+  const data = {
+    name,
+    company: $("f_company").value.trim(),
+    title: $("f_title").value.trim(),
+    email: $("f_email").value.trim(),
+    phone: $("f_phone").value.trim(),
+    tags,
+    memo: $("f_memo").value.trim(),
+    photo: currentPhoto || "",
+  };
+  if(editingId && cards.find(x=>x.id===editingId)){
+    Object.assign(cards.find(x=>x.id===editingId), data);
+  }else{
+    data.id = uid();
+    cards.push(data);
+  }
+  save();
+  closeEdit();
+  render();
+}
+
+function deleteCard(){
+  if(!editingId) return;
+  if(!confirm("この名刺を削除しますか？")) return;
+  cards = cards.filter(x=>x.id!==editingId);
+  save();
+  closeEdit();
+  render();
+}
+
+/* ---------- photo handling ---------- */
+function handleFile(file){
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e=>{
+    const img = new Image();
+    img.onload = ()=>{
+      // downscale for storage (max 1400px on the long side)
+      const max = 1400;
+      let {width:w, height:h} = img;
+      const scale = Math.min(1, max/Math.max(w,h));
+      const cw = Math.round(w*scale), ch = Math.round(h*scale);
+      const cv = document.createElement("canvas");
+      cv.width = cw; cv.height = ch;
+      cv.getContext("2d").drawImage(img,0,0,cw,ch);
+      setPreview(cv.toDataURL("image/jpeg",0.82));
+      resetOcrUI();
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+/* ---------- OCR ---------- */
+function extractFields(text){
+  // email
+  const em = text.match(/[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/);
+  if(em && !$("f_email").value.trim()) $("f_email").value = em[0];
+
+  // phone: scan lines, prefer ones labelled TEL, skip FAX-only lines
+  const lines = text.split(/\r?\n/);
+  let tel = "";
+  const phoneRe = /0\d{1,3}[\-\(\)\s]?\d{1,4}[\-\)\s]?\d{3,4}/;
+  for(const ln of lines){
+    const isFax = /fax|ＦＡＸ/i.test(ln);
+    const isTel = /tel|電話|☎|ＴＥＬ/i.test(ln);
+    const m = ln.match(phoneRe);
+    if(!m) continue;
+    if(isFax && !isTel) continue;       // skip fax-only line
+    tel = m[0];
+    if(isTel) break;                    // a clearly labelled TEL wins
+    if(!tel) tel = m[0];
+  }
+  if(tel && !$("f_phone").value.trim()){
+    $("f_phone").value = tel.replace(/[\(\)\s]/g,"-").replace(/-+/g,"-").replace(/^-|-$/g,"");
+  }
+}
+
+async function runOcr(){
+  if(!currentPhoto) return;
+  const statusEl = $("ocrStatus");
+  $("ocrBtn").disabled = true;
+  statusEl.textContent = "読み取り中… (初回は言語データの読み込みに時間がかかります)";
+  try{
+    if(!ocrWorker){
+      ocrWorker = await Tesseract.createWorker("jpn+eng", 1, {
+        logger: m=>{
+          if(m.status === "recognizing text"){
+            statusEl.textContent = "読み取り中… " + Math.round(m.progress*100) + "%";
+          }
+        }
+      });
+    }
+    const { data } = await ocrWorker.recognize(currentPhoto);
+    const text = (data.text||"").replace(/[ \t]+\n/g,"\n").trim();
+    $("ocrText").value = text || "(文字を認識できませんでした)";
+    $("ocrResult").style.display = "block";
+    extractFields(text);
+    statusEl.textContent = "完了。メール・電話は自動入力しました。氏名・会社は結果を見て入力してください。";
+  }catch(err){
+    statusEl.textContent = "読み取りに失敗しました（ネット接続が必要です）。";
+    console.error(err);
+  }finally{
+    $("ocrBtn").disabled = false;
+  }
+}
+
+/* ---------- events ---------- */
+$("addBtn").onclick = ()=>openEdit(null);
+$("saveBtn").onclick = saveCard;
+$("cancelEdit").onclick = closeEdit;
+$("deleteBtn").onclick = deleteCard;
+$("closeDetail").onclick = closeDetail;
+$("editFromDetail").onclick = ()=>{ closeDetail(); openEdit(editingId); };
+$("search").oninput = render;
+$("photoInput").onchange = e=>handleFile(e.target.files[0]);
+$("ocrBtn").onclick = runOcr;
+$("removePhoto").onclick = ()=>{ setPreview(null); $("photoInput").value=""; resetOcrUI(); };
+$("ocrToMemo").onclick = ()=>{
+  const t = $("ocrText").value.trim();
+  if(!t) return;
+  const cur = $("f_memo").value.trim();
+  $("f_memo").value = cur ? cur + "\n" + t : t;
+};
+
+[$("editOverlay"),$("detailOverlay")].forEach(ov=>{
+  ov.addEventListener("click", e=>{ if(e.target===ov) ov.classList.remove("open"); });
+});
+document.addEventListener("keydown", e=>{
+  if(e.key==="Escape"){ closeEdit(); closeDetail(); }
+});
+
+load();
+render();
+</script>
+</body>
+</html>
