@@ -426,6 +426,62 @@ function handleFile(file){
   reader.readAsDataURL(file);
 }
 
+/* ---------- OCR image preprocessing ---------- */
+// Upscale + grayscale + adaptive (local-mean) binarization.
+// This greatly improves Tesseract accuracy on business cards by removing
+// colored backgrounds/logos and coping with uneven lighting.
+function preprocessForOcr(dataUrl){
+  return new Promise(resolve=>{
+    const img = new Image();
+    img.onload = ()=>{
+      const target = 2000;                       // enlarge small text for OCR
+      let {width:w, height:h} = img;
+      const scale = Math.max(1, target/Math.max(w,h));
+      const cw = Math.round(w*scale), ch = Math.round(h*scale);
+      const cv = document.createElement("canvas");
+      cv.width = cw; cv.height = ch;
+      const ctx = cv.getContext("2d");
+      ctx.drawImage(img,0,0,cw,ch);
+      const imgData = ctx.getImageData(0,0,cw,ch);
+      const d = imgData.data, n = cw*ch;
+      // grayscale
+      const gray = new Float32Array(n);
+      for(let i=0;i<n;i++){
+        gray[i] = 0.299*d[i*4] + 0.587*d[i*4+1] + 0.114*d[i*4+2];
+      }
+      // integral image for fast local means (Bradley adaptive threshold)
+      const W = cw+1;
+      const integral = new Float64Array(W*(ch+1));
+      for(let y=0;y<ch;y++){
+        let rowsum=0;
+        for(let x=0;x<cw;x++){
+          rowsum += gray[y*cw+x];
+          integral[(y+1)*W+(x+1)] = integral[y*W+(x+1)] + rowsum;
+        }
+      }
+      const rad = Math.max(10, Math.round(Math.min(cw,ch)/35)); // window radius
+      const tDiff = 0.15;                                       // 15% under local mean = ink
+      for(let y=0;y<ch;y++){
+        const y0=Math.max(0,y-rad), y1=Math.min(ch-1,y+rad);
+        for(let x=0;x<cw;x++){
+          const x0=Math.max(0,x-rad), x1=Math.min(cw-1,x+rad);
+          const area=(x1-x0+1)*(y1-y0+1);
+          const sum = integral[(y1+1)*W+(x1+1)] - integral[y0*W+(x1+1)]
+                    - integral[(y1+1)*W+x0]     + integral[y0*W+x0];
+          const mean = sum/area;
+          const val = (gray[y*cw+x] < mean*(1-tDiff)) ? 0 : 255;
+          const idx=(y*cw+x)*4;
+          d[idx]=d[idx+1]=d[idx+2]=val; d[idx+3]=255;
+        }
+      }
+      ctx.putImageData(imgData,0,0);
+      resolve(cv.toDataURL("image/png"));         // lossless for crisp binary text
+    };
+    img.onerror = ()=>resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
 /* ---------- OCR ---------- */
 // convert full-width alphanumerics/symbols to half-width
 function toHalf(s){
@@ -513,8 +569,14 @@ async function runOcr(){
           }
         }
       });
+      await ocrWorker.setParameters({
+        tessedit_pageseg_mode: "3",        // automatic page segmentation
+        preserve_interword_spaces: "1"
+      });
     }
-    const { data } = await ocrWorker.recognize(currentPhoto);
+    statusEl.textContent = "画像を最適化中…";
+    const prepared = await preprocessForOcr(currentPhoto);
+    const { data } = await ocrWorker.recognize(prepared);
     const text = (data.text||"").replace(/[ \t]+\n/g,"\n").trim();
     $("ocrText").value = text || "(文字を認識できませんでした)";
     $("ocrResult").style.display = "block";
