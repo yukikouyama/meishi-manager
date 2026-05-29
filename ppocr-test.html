@@ -77,7 +77,7 @@ let ocr = null, currentUrl = null;
 
 (async () => {
   try{
-    const { default: Ocr } = await import("https://esm.sh/@gutenye/ocr-browser@1.4.8?bundle-deps");
+    const { default: Ocr } = await import("https://cdn.jsdelivr.net/npm/@gutenye/ocr-browser@1.4.8/+esm");
     ocr = await Ocr.create({
       models: { detectionPath: DET, recognitionPath: REC, dictionaryPath: DICT }
     });
